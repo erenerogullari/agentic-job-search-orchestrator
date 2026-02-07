@@ -1,12 +1,18 @@
 """Graph nodes for the job-search orchestrator."""
 
+import logging
+
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from src.agents.state import AgentState
 from src.chains.prompts import PROFILE_EXTRACTION_PROMPT, QUERY_GENERATION_PROMPT
-from src.schema.profile import CandidateProfile, SearchQueryList
-import logging
+from src.schema.profile import CandidateProfile
+from src.schema.search import SearchQueryList
+from src.schema.job import JobListing
+from src.tools.linkedin_scraper import LinkedInScraper
+from src.utils.storage import JobDatabase
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -67,6 +73,53 @@ def query_optimizer_node(state: AgentState) -> dict:
     logger.debug(f"Result: {result}")
 
     return {"search_queries": result.queries}
+
+
+def job_discovery_node(state: AgentState) -> dict:
+    search_queries = state.get("search_queries") or []
+    if not search_queries:
+        return {"found_jobs": []}
+
+    profile = state.get("profile")
+    location = ""
+    if profile and profile.location:
+        location = profile.location
+
+    job_type_filters = state.get("job_type_filters") or []
+    experience_level_filters = state.get("experience_level_filters") or []
+    remote_filters = state.get("remote_filters") or []
+    remote_value = remote_filters[0] if len(remote_filters) == 1 else ""
+
+    db = JobDatabase(remote=remote_value)
+    scraper = LinkedInScraper()
+
+    found_jobs: list[JobListing] = []
+    seen_urls: set[str] = set()
+
+    for query in search_queries:
+        jobs = scraper.search_jobs(
+            query=query,
+            location=location,
+            job_type=job_type_filters or None,
+            experience_level=experience_level_filters or None,
+            remote=remote_filters or None,
+        )
+        if not jobs:
+            continue
+
+        urls = [job.job_url for job in jobs if job.job_url]
+        new_urls = set(db.get_new_jobs(urls))
+        filtered_jobs = [job for job in jobs if job.job_url in new_urls]
+        if filtered_jobs:
+            db.add_jobs(filtered_jobs)
+
+        for job in filtered_jobs:
+            if job.job_url in seen_urls:
+                continue
+            seen_urls.add(job.job_url)
+            found_jobs.append(job)
+
+    return {"found_jobs": found_jobs}
 
 
 if __name__ == "__main__":
