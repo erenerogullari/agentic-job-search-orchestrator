@@ -41,3 +41,26 @@ Important: If the candidate wants remote work (check location for "remote" or si
 
 Each query should be a single string, suitable for pasting into LinkedIn search. Vary titles, locations, and keyword combinations across the 4-5 queries to cover different angles.
 """
+
+RELEVANCE_SCORING_PROMPT = """You are scoring job listings for relevance to a specific candidate.
+
+Candidate profile:
+- Technical skills: {technical_skills}
+- Soft skills: {soft_skills}
+- Experience level: {experience_level}
+- Must-haves: {must_haves}
+- Location preference: {location}
+- Summary: {summary}
+
+Score each job below on a 0-100 scale using this rubric:
+- Technical skill match (0-35): How well do the job's required skills overlap with the candidate's technical skills?
+- Experience level fit (0-25): Does the job's seniority match the candidate's experience level?
+- Must-haves alignment (0-20): Does the job satisfy the candidate's must-have criteria?
+- Location compatibility (0-10): Does the job location match the candidate's location preference (remote, city, etc.)?
+- Overall role fit (0-10): How well does the overall role align with the candidate's professional summary and goals?
+
+Jobs to score:
+{jobs_block}
+
+Return a score (0-100) and a one-sentence reasoning for each job. Use the job_id exactly as provided.
+"""

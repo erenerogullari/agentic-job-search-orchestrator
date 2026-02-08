@@ -209,6 +209,70 @@ class LinkedInScraper:
         return results
 
 
+    def scrape_job_descriptions(
+        self,
+        jobs: list[JobListing],
+        wait_ms: int = 10000,
+    ) -> dict[str, str]:
+        """Scrape full job descriptions from LinkedIn detail pages.
+
+        Returns a dict mapping job_id -> description text.
+        Gracefully skips jobs that fail to load.
+        """
+        descriptions: dict[str, str] = {}
+        if not jobs:
+            return descriptions
+
+        description_selectors = [
+            "div.show-more-less-html__markup",
+            "div.description__text",
+            "section.show-more-less-html",
+            "div.jobs-description__content",
+        ]
+
+        with sync_playwright() as p:
+            browser = p.firefox.launch(headless=True)
+            page = browser.new_page()
+            page.set_extra_http_headers({
+                "Accept-Language": "en-US,en;q=0.9",
+            })
+
+            for job in jobs:
+                if not job.job_url:
+                    continue
+                try:
+                    page.goto(job.job_url, wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_timeout(wait_ms)
+
+                    description_text = None
+                    for selector in description_selectors:
+                        try:
+                            el = page.query_selector(selector)
+                            if el:
+                                description_text = el.inner_text().strip()
+                                if description_text:
+                                    break
+                        except PlaywrightError:
+                            continue
+
+                    if description_text:
+                        descriptions[job.id] = description_text
+                        print(f"Scraped description for {job.id} ({job.title})")
+                    else:
+                        print(f"No description found for {job.id} ({job.title})")
+
+                except (PlaywrightTimeoutError, PlaywrightError) as e:
+                    print(f"Failed to scrape {job.id} ({job.title}): {e}")
+                    continue
+
+                # Polite delay between pages
+                page.wait_for_timeout(1500)
+
+            browser.close()
+
+        return descriptions
+
+
 if __name__ == "__main__":
     """Test the scraper. Set LINKEDIN_SCRAPER_DEBUG=1 to save a screenshot when no jobs found."""
     from src.utils.storage import JobDatabase

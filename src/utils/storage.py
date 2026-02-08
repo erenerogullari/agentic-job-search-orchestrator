@@ -100,6 +100,26 @@ class JobDatabase:
         existing = {row[0] for row in self._conn.execute(query, urls).fetchall()}
         return [url for url in urls if url not in existing]
 
+    def update_scores(self, scores: list[tuple[str, float]]) -> int:
+        """Batch-update relevance scores for scored jobs.
+
+        Args:
+            scores: list of (job_id, relevance_score) tuples.
+
+        Returns:
+            Number of rows updated.
+        """
+        if not scores:
+            return 0
+
+        before = self._conn.total_changes
+        self._conn.executemany(
+            "UPDATE jobs SET relevance_score = ?, status = 'scored' WHERE id = ?",
+            [(score, job_id) for job_id, score in scores],
+        )
+        self._conn.commit()
+        return self._conn.total_changes - before
+
     def db_to_df(self) -> pd.DataFrame:
         """Return the DB as a pandas DataFrame."""
         df = pd.read_sql_query("SELECT * FROM jobs", self._conn)
